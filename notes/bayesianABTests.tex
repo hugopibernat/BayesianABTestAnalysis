@@ -1,0 +1,221 @@
+\documentclass[11pt, a4wide]{article}   	% use "amsart" instead of "article" for AMSLaTeX format
+\usepackage{geometry}                		% See geometry.pdf to learn the layout options. There are lots.
+\geometry{a4paper}                   		% ... or a4paper or a5paper or ... 
+
+%Custom commands
+\newcommand{\data}{\text{data}}
+\newcommand{\sessions}{s}
+\newcommand{\purchases}{p}
+\newcommand{\sepu}{\sessions, \purchases}
+\newcommand{\convr}{R}
+\newcommand{\ushi}{\text{UH}}
+
+%Packages
+\usepackage{graphicx}
+\usepackage{amssymb, amsmath}
+
+\usepackage{a4wide}
+\usepackage{listings,url}
+\usepackage[retainorgcmds]{IEEEtrantools}
+
+\title{A Bayesian Approach to AB Testing [Draft]\\{\small Introducing a Python Engine for Testing}}
+\author{Hugo Pibernat and Nuria Duran}
+%\date{}
+
+\begin{document}
+\maketitle
+\section{Introduction}
+The main goal of our AB-Test is to decide which of two different versions of the same product performs better on a specific set of metrics. In this report we present a Bayesian approach to tackle this objective.
+
+A Bayesian model includes a prior distribution which enables us to provide information about the parameters $KPI_A$ and $KPI_B$ governing our data \emph{before} observing the data. The information included in the data is taken into account by means of the likelihood function. Combining both the prior and the likelihood function results in a posteriori distribution, a probability distribution of the parameters (the metric of each group, in this case) which will help us to decide which of the version performs better.
+
+The (joint) posterior probability distribution is defined as follows:
+
+
+\begin{equation}
+P(\text{KPI}_A,\text{KPI}_B|data)
+\end{equation}
+
+In order to compute this distribution, we will need the Bayes theorem, which states that
+
+\begin{equation}
+P(X|Y) = \frac{P(Y|X)\cdot P(X)}{P(Y)}
+\end{equation}
+
+%\section{Bayesian models}
+\section{Binomial Variables: Modelling Conversion Rate}
+
+The history of a user (UH) looks as follows:
+\begin{equation}
+<0,0,1,0,0,0,1,0,0,1,0,1,1,0,1>
+\end{equation}
+where 0 represents a non-converted visit and 1 represents a converted visit. Hence, 
+\begin{equation}
+\ushi\sim Bin(n,\theta)
+\end{equation}
+where $n\in \mathbb{Z}^{+}$ and $\theta\in[0,1]$ is the parameter we want to model with the posteriori distribution once given the priori distribution $P(\theta)$ and the likelihood function. We usually call this parameter Conversion Rate (CR).
+
+\subsection{Choosing the prior distribution}
+The prior distribution $P(\theta)$ enables us to include some knowledge in the final distribution of the KPI that we are modelling. There are several considerations when choosing the prior. However, for the sake of simplicity, in this case we will use the Beta distribution, which has a support of $[0,1]$, exactly the range of values of CR:
+
+\begin{equation}
+Beta_{\alpha,\beta}(\theta) = \frac{\theta^{\alpha-1}(1-\theta)^{\beta-1}}{B(\alpha,\beta)}
+\end{equation}
+
+
+where $\alpha$ and $\beta$ are the parameters of the distribution and B is the beta function, defined as follows:
+
+\begin{equation}
+B(\alpha,\beta) = \int_0^1t^{\alpha-1}(1-t)^{\beta-1}{B(\alpha,\beta)}
+\end{equation}
+
+
+ A particularly useful set of parameters is $\alpha=\beta=1$ which results in the uniform distribution. That is, a priori it is considered that all the values a parameter can take are equally likely to be taken.
+
+
+
+\subsection{Obtaining the posteriori distribution}
+
+To compute the posteriori distribution, apart from the priori distribution, we need the likelihood function, the probability mass function of the Binomial distribution in our case:
+\begin{equation}
+P(X=k)=\binom{n}{k}\theta^k(1-\theta)^{n-k}
+\end{equation}
+
+In order to compute the posteriori distribution, we will use the Bayes theorem:
+
+
+\begin{equation}
+\label{eq:bayesconvr}
+P(\theta|n,k) = \frac{P(n,k|\theta)\cdot P(\theta)}{P(n,k)}
+\end{equation}
+
+We therefore need to obtain $P(n,k|\theta)$ and $P(\theta)$. As it will be seen later, the value of P(n,k) does not actually need to be computed.
+
+First, we have
+\begin{equation}
+P(n,k|\theta) = \binom{n}{k}\theta^k(1-\theta)^{n-k} 
+\end{equation}
+
+
+
+Back to Equation~\ref{eq:bayesconvr} we now have that
+
+\begin{equation}
+\begin{array}{c}
+P(\theta|n,k) = \\
+\\
+=  \frac{P(n,k|\theta)\cdot P(\theta)}{P(n,k)}  = \\
+\\
+=  \frac{\binom{n}{k}\theta^k(1-\theta)^{n-k} \cdot \frac{\theta^{\alpha-1}(1-\theta)^{\beta-1}}{B(\alpha,\beta)}}{P(n,k)} = \\
+\\
+=  \frac{\binom{n}{k}}{P(n,k)B(\alpha,\beta)} \cdot \theta^{k + \alpha-1}(1-\theta)^{n-k+\beta-1}
+\end{array}
+\end{equation}
+
+We can rewrite the previous equation as:
+\begin{equation}
+P(\theta|n,k) = \lambda \cdot \theta^{k + \alpha-1}(1-\theta)^{n-k+\beta-1}
+\end{equation}
+
+
+where
+\begin{equation}
+\lambda = \binom{n}{k}\frac{1}{P(n,k)B(\alpha,\beta)} 
+\end{equation}
+
+Hence, our posteriori distribution for the $\theta$ is:
+
+\begin{equation}
+P(\theta|n,k) = Beta_{n+\alpha,n-k+\beta}(\theta)
+\end{equation}
+
+Or, in terms of sessions $\sessions$, purchases $\purchases$, and conversion rate $\convr$:
+
+\begin{equation}
+P(\convr|\sepu) = Beta_{\sessions+\alpha,\sessions-\purchases+\beta}(\theta)
+\end{equation}
+
+\subsection{Running an AB-Test on Conversion Rate}
+
+Let's focus now on obtaining the probability that one conversion rate group is higher than the other (although the result is easily generalisable to $n$ test groups). That is:
+
+\begin{equation}
+\label{eq:integral-binomial}
+P(\convr_A > \convr_B|\data) = \iint\limits_{\convr_A>\convr_B} P(\convr_A,\convr_B|\data)\; d\convr_A\; d\convr_B
+\end{equation}
+
+where $P(\convr_A,\convr_B|\data)$ is the joint distribution of both conversion rates. If we can assume independence of our tests groups\footnote{Although it is quite difficult that with our sparse social graph any two events are really independent, this is still quite a general assumption in most of our tests.}, then the following holds:
+
+\begin{equation}
+\begin{array}{c}
+P(\convr_A,\convr_B|\data) = \\
+\\
+= P(\convr_A|\data_A)\cdot P(\convr_B|\data_B) = \\
+\\
+= \frac{P(\data_A|\convr_A)P(\convr_A)}{P(\data_A)} \cdot \frac{P(\data_B|\convr_B)P(\convr_B)}{P(\data_B)} = \\
+\\
+= \frac{P(\data_A|\convr_A)P(\convr_A)P(\data_B|\convr_B)P(\convr_B)}{P(\data_A)P(\data_B)}
+\end{array}
+\end{equation}
+
+where $P(\data_A|\convr_A)$, $P(\convr_A)$, on the one hand, and $P(\data_B|\convr_B)$, $P(\convr_B)$, on the other hand, stand for the \emph{likelihood function} and the \emph{prior distribution}, and they can be obtained as explained above. Look in the \emph{BayesianABTest.py} file for an implementation of this and the other methods explained in this paper. Or run some of the examples in \emph{examples\_ABTests.py} to see  the method in action.
+
+\section{Gaussian Variables: Modelling Attempts per Level}
+
+When our data follow a Gaussian Distribution
+
+$$X\sim N(\mu,\sigma^2)$$
+
+the prior distribution becomes slightly more complicated. In this case we need to obtain a joint distribution of the form:
+
+\begin{equation}
+P(\mu,\sigma^2)
+\end{equation}
+
+From Gelman et al.~[4], we know that it can be described as follows:
+
+\begin{equation}
+P(\mu,\sigma^2) = P(\sigma^2)P(\mu|\sigma^2)
+\end{equation}
+
+where $P(\sigma^2)$ is an Inverse Gamma Distribution and $P(\mu|\sigma^2)$ is also a Gaussian Distribution.
+
+Following Gelman's indications we can sample the posteriori distribution and then run the AB-Test using the code from \emph{BayesianABTest.py}.
+
+
+\section{Log-Normal Variables: Modelling Spend}
+
+When, for instance, we are modelling user spend, data are positive. Therefore, a Gaussian (or Normal) distribution is not appropriate due to its $(-\infty,+\infty)$ support.
+
+In those situations, a Log-Normal distribution might fit our data more accurately. A Log-Normal Distribution is such that if $X$ is distributed log-normally, then $ln(X)$ is distributed normally:
+
+\begin{equation}
+\text{if}\;\; X\sim Log-N(\mu,\sigma^2) \text{   then   } ln(X) \sim N(\mu,\sigma^2)
+\end{equation}
+
+In a Log-Normal distribution the $\mu$ and $\sigma^2$ are not the mean and the variance. The mean, variance, median, and mode from a Log-Normal distribution are computed as follows:
+
+\begin{itemize}
+\item Mean: $e^{\mu+\frac{\sigma^2}{2}}$
+\item Variance: $(e^{\sigma^2}-1)e^{2\mu+\sigma^2}$
+\item Median: $e^{\mu}$
+\item Mode: $e^{\mu-\sigma^2}$
+\end{itemize}
+
+An examplary code to sample the posteriori distribution can be found in \emph{BayesianABTest.py}.
+
+\section{Modelling Spend per Session with a Two-Part Model Approach}
+When our data contain a substantial amount of zeroes, a log-normal distribution is not appropriate, as its support is strictly positive. In this situation, we can first model the zeros vs. not zeros with a Binomial distribution, then the non-zeroes with a Log normal distribution, and obtain our final posteriori distribution as the product of these two.
+
+The following code runs an AB-Test on such a combination of variables: each set of variable values is randomly sampled, and then each random value from the first set is multiplied by one random value from the second set. Look at the file \emph{BayesianABTest.py} for a possible implementation of this method.
+
+\section{References}
+\begin{enumerate}
+\item Evan Miller. How Not To Run An A/B Test.
+Available at: \url{http://www.evanmiller.org/how-not-to-run-an-ab-test.html}
+\item Chris Stucchio. \emph{Analyzing conversion rates with Bayes Rule (Bayesian statistics tutorial)}. Available at: \url{http://www.chrisstucchio.com/blog/2013/bayesian_analysis_conversion_rates.html}
+\item Sergey Feldman. \emph{Rich Relevance, Collection on Bayesian Testing}. Available at: \url{http://engineering.richrelevance.com/category/bayesian/}
+\item Gelman,~A. et al. \emph{Bayesian Data Analysis}, 3rd Edition. CRC Press, 2013.
+\end{enumerate}
+
+\end{document}  
